@@ -3,7 +3,6 @@ package de.unknowncity.yabawrtp;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
-import org.bukkit.block.Biome;
 import org.bukkit.block.Block;
 import org.incendo.cloud.bukkit.parser.location.Location2D;
 
@@ -15,21 +14,6 @@ public class AbstractDelegateLocationFactoryBean {
     private final YABAWRTPPlugin plugin;
     private final ThreadLocalRandom random = ThreadLocalRandom.current();
     private final Map<String, List<Location>> cachedSaveLocations = new HashMap<>();
-
-    private static final Set<Biome> ALLOWED_BIOMES = Set.of(
-            Biome.PLAINS,
-            Biome.SAVANNA,
-            Biome.DESERT,
-            Biome.FOREST,
-            Biome.BIRCH_FOREST,
-            Biome.DARK_FOREST,
-            Biome.TAIGA,
-            Biome.SUNFLOWER_PLAINS,
-            Biome.WINDSWEPT_HILLS,
-            Biome.MEADOW,
-            Biome.JUNGLE,
-            Biome.SPARSE_JUNGLE
-    );
 
     public AbstractDelegateLocationFactoryBean(YABAWRTPPlugin yabawrtpPlugin) {
         this.plugin = yabawrtpPlugin;
@@ -87,7 +71,6 @@ public class AbstractDelegateLocationFactoryBean {
 
             for (int i = 0; i < plugin.configuration().maxTries(); i++) {
 
-                System.out.println("Searching for safe location in try " + i);
                 double angle = random.nextDouble() * 2 * Math.PI;
                 double distance = minRadius + (random.nextDouble() * (maxRadius - minRadius));
                 double x = origin.getX() + distance * Math.cos(angle);
@@ -104,8 +87,6 @@ public class AbstractDelegateLocationFactoryBean {
                 } else {
                     y = world.getHighestBlockYAt((int) x, (int) z);
                 }
-
-                System.out.println("Searching for safe location at " + x + ", " + y + ", " + z);
 
                 var location = new Location(world, x, y, z).toCenterLocation();
                 location.setY(location.getY() - 0.5);
@@ -124,7 +105,6 @@ public class AbstractDelegateLocationFactoryBean {
         Block block = location.getBlock();
         Block blockBelow = block.getRelative(0, -1, 0);
         Block blockAbove = block.getRelative(0, 1, 0);
-        System.out.println("Checking safe location at " + blockBelow.getType() + ", " + block.getType() + ", " + blockAbove.getType());
 
         if (!blockBelow.getType().isSolid()) return false;
         if (!isSaveOnBlock(blockBelow)) return false;

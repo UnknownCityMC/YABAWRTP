@@ -4,19 +4,19 @@ import de.unknowncity.astralib.libs.com.fasterxml.jackson.annotation.JsonPropert
 
 public class RtpSettings {
     @JsonProperty
-    private Radius radius = new Radius();
+    private final Radius radius = new Radius();
     @JsonProperty
-    private Origin origin = new Origin();
+    private final Origin origin = new Origin();
 
     public RtpSettings() {
 
     }
 
-    public class Radius {
+    public static class Radius {
         @JsonProperty
-        private int min = 0;
+        private final int min = 0;
         @JsonProperty
-        private int max = 1000;
+        private final int max = 1000;
 
         public Radius() {
 
@@ -31,11 +31,11 @@ public class RtpSettings {
         }
     }
 
-    public class Origin {
+    public static class Origin {
         @JsonProperty
-        private int x = 0;
+        private final int x = 0;
         @JsonProperty
-        private int z = 0;
+        private final int z = 0;
 
         public Origin() {
 

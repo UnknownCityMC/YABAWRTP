@@ -11,15 +11,15 @@ import java.util.Map;
 public class RtpConfiguration extends YamlAstraConfiguration {
 
     @JsonProperty("default")
-    private RtpSettings defaultSettings = new RtpSettings();
+    private final RtpSettings defaultSettings = new RtpSettings();
     @JsonProperty
-    private Map<String, RtpSettings> worlds = Map.of(
+    private final Map<String, RtpSettings> worlds = Map.of(
             "world", new RtpSettings()
     );
     @JsonProperty
-    private int maxTries = 100;
+    private final int maxTries = 100;
     @JsonProperty
-    private int keepInCache = 5;
+    private final int keepInCache = 5;
 
     public RtpConfiguration() {
 
