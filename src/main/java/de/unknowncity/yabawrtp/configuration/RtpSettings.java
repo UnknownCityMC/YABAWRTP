@@ -16,7 +16,7 @@ public class RtpSettings {
         @JsonProperty
         private final int min = 0;
         @JsonProperty
-        private final int max = 1000;
+        private final int max = 3000;
 
         public Radius() {
 
