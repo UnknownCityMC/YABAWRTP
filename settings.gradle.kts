@@ -1,2 +1,1 @@
-rootProject.name = "PaperTemplatePlugin"
-
+rootProject.name = "YABAWRTP"

@@ -1,0 +1,6 @@
+prefix: "<white>[<aqua>RTP<white>] "
+command:
+  rtp:
+    error: "<prefix><red>Konnte keinen Sichern Ort finden"
+    success: "<prefix><gray>Teleportation abgeschlossen!"
+    searching: "<prefix><gray>Suche nach sicherem Ort..."

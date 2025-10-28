@@ -13,7 +13,6 @@ plugins {
 group = "de.unknowncity"
 version = "0.1.0"
 
-// REPLACE PaperTemplatePlugin with the plugin name!
 val mainClass = "${group}.${rootProject.name.lowercase()}.${project.name}Plugin"
 val shadeBasePath = "${group}.${rootProject.name.lowercase()}.libs."
 
@@ -39,14 +38,14 @@ repositories {
 dependencies {
 
     // User interface library
-    implementation("xyz.xenondevs.invui", "invui", "2.0.0-alpha.19")
+    //implementation("xyz.xenondevs.invui", "invui", "2.0.0-alpha.19")
 
     // Economy system
-    compileOnly("su.nightexpress.coinsengine", "CoinsEngine", "2.5.0")
+    //compileOnly("su.nightexpress.coinsengine", "CoinsEngine", "2.5.0")
 
-    compileOnly("de.unknowncity.astralib", "astralib-paper-api", "0.6.0-SNAPSHOT")
+    compileOnly("de.unknowncity.astralib", "astralib-paper-api", "0.7.0-SNAPSHOT")
 
-    compileOnly("io.papermc.paper", "paper-api", "1.21.8-R0.1-SNAPSHOT")
+    compileOnly("io.papermc.paper", "paper-api", "1.21.10-R0.1-SNAPSHOT")
 }
 
 buildscript {
@@ -63,8 +62,7 @@ bukkit {
     name = "UC-${project.name}"
     version = "${rootProject.version}"
 
-    // REPLACE with fitting description
-    description = "Super cool sample plugin"
+    description = "Yet Another But Actually Working RTP Plugin"
 
     author = "UnknownCity"
 
@@ -103,13 +101,14 @@ tasks {
     }
 
     runServer {
-        minecraftVersion("1.21.8")
+        minecraftVersion("1.21.10")
 
         jvmArgs("-Dcom.mojang.eula.agree=true")
 
         downloadPlugins {
             // ADD plugins needed for testing
             // E.g: url("https://github.com/EssentialsX/Essentials/releases/download/2.20.1/EssentialsX-2.20.1.jar")
+            url("https://ci.unknowncity.de/job/AstraLib/63/artifact/astralib-paper-plugin/build/libs/AstraLib-Paper-0.7.0-SNAPSHOT-%2363.jar")
         }
     }
 
