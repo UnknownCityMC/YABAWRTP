@@ -54,7 +54,7 @@ public class RtpCommand extends PaperCommand<YABAWRTPPlugin> {
         if (context.contains("min-radius")) {
             resolveSaveLocation(player, world, minRadius, maxRadius, origin);
         } else {
-            var locationOpt = plugin.abstractDelegateLocationFactoryBean().getCachedSaveLocation(world);
+            var locationOpt = plugin.abstractDelegateLocationFactoryBean().getCachedSafeLocation(world);
             if (locationOpt.isEmpty()) {
                 resolveSaveLocation(player, world, minRadius, maxRadius, origin);
                 return;
@@ -67,16 +67,16 @@ public class RtpCommand extends PaperCommand<YABAWRTPPlugin> {
     }
 
     private void resolveSaveLocation(Player player, World world, Integer minRadius, Integer maxRadius, Location2D origin) {
-        plugin.abstractDelegateLocationFactoryBean().findSaveLocation(world, minRadius, maxRadius, origin).whenComplete((location, throwable) -> {
-            if (throwable != null || location.isEmpty()) {
-                plugin.getLogger().log(Level.WARNING, "Error while trying to find a safe location for " + player.getName());
-                plugin.messenger().sendMessage(player, NodePath.path("command", "rtp", "error"));
-                return;
-            }
+        var location = plugin.abstractDelegateLocationFactoryBean().findSaveLocation(world.getName(), minRadius, maxRadius, origin.getBlockX(), origin.getBlockZ());
 
-            var saveLocation = location.get();
-            player.teleportAsync(saveLocation);
-            plugin.messenger().sendMessage(player, NodePath.path("command", "rtp", "success"));
-        });
+        if (location.isEmpty()) {
+            plugin.getLogger().log(Level.WARNING, "Error while trying to find a safe location for " + player.getName());
+            plugin.messenger().sendMessage(player, NodePath.path("command", "rtp", "error"));
+            return;
+        }
+
+        var saveLocation = location.get();
+        player.teleportAsync(saveLocation);
+        plugin.messenger().sendMessage(player, NodePath.path("command", "rtp", "success"));
     }
 }

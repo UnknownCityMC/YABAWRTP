@@ -1,117 +1,148 @@
 package de.unknowncity.yabawrtp;
 
+import com.google.common.cache.CacheBuilder;
+import com.google.common.cache.CacheLoader;
+import com.google.common.cache.LoadingCache;
+import com.google.common.util.concurrent.ListenableFuture;
+import com.google.common.util.concurrent.ListeningExecutorService;
+import com.google.common.util.concurrent.MoreExecutors;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
 import org.bukkit.block.Block;
-import org.incendo.cloud.bukkit.parser.location.Location2D;
+import org.jetbrains.annotations.NotNull;
 
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.Optional;
+import java.util.Queue;
+import java.util.concurrent.ConcurrentLinkedQueue;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.ThreadLocalRandom;
+import java.util.logging.Level;
 
 public class AbstractDelegateLocationFactoryBean {
     private final YABAWRTPPlugin plugin;
     private final ThreadLocalRandom random = ThreadLocalRandom.current();
-    private final Map<String, List<Location>> cachedSaveLocations = new ConcurrentHashMap<>();
+    private final LoadingCache<String, Queue<Location>> cache;
+    private final ListeningExecutorService reloadExecutor = MoreExecutors.listeningDecorator(Executors.newFixedThreadPool(2));
 
     public AbstractDelegateLocationFactoryBean(YABAWRTPPlugin yabawrtpPlugin) {
         this.plugin = yabawrtpPlugin;
-    }
+        this.cache = CacheBuilder.newBuilder()
+                .maximumSize(plugin.configuration().keepInCache())
+                .build(new CacheLoader<>() {
+                    @Override
+                    public @NotNull Queue<Location> load(@NotNull String world) {
+                        var settings = plugin.configuration().worldSettings(world);
+                        var queue = new ConcurrentLinkedQueue<Location>();
+                        int trys = 0;
+                        do {
+                            findSaveLocation(
+                                    world,
+                                    settings.radius().min(),
+                                    settings.radius().max(),
+                                    settings.origin().x(),
+                                    settings.origin().z()
+                            ).ifPresent(queue::add);
+                            plugin.getLogger().info("Loaded " + queue.size() + " safe locations for " + world + " after " + trys + " tries.");
+                            trys++;
+                        } while (queue.size() < plugin.configuration().keepInCache() && trys < plugin.configuration().maxTries());
+                        return queue;
+                    }
 
-    public Optional<Location> getCachedSaveLocation(World world) {
-        if (!cachedSaveLocations.containsKey(world.getName()) || cachedSaveLocations.get(world.getName()).isEmpty()) {
-            return Optional.empty();
-        }
-        for (int i = 0; i < cachedSaveLocations.get(world.getName()).size(); i++) {
-            var location = cachedSaveLocations.get(world.getName()).getFirst();
-            if (!isSafeLocation(location)) {
-                continue;
-            }
-
-            cachedSaveLocations.get(world.getName()).remove(i);
-            recache();
-            return Optional.of(location);
-        }
-        return Optional.empty();
-    }
-
-    private void cacheLocation(World world, int tryCount) {
-        if (tryCount >= plugin.configuration().maxTries()) {
-            return;
-        }
-        var locations = cachedSaveLocations.getOrDefault(world.getName(), new LinkedList<>());
-        if (locations.size() >= plugin.configuration().keepInCache()) {
-            plugin.getLogger().info("Cache for world " + world.getName() + " is full");
-            return;
-        }
-        var settings = plugin.configuration().worldSettings(world.getName());
-        findSaveLocation(world, settings.radius().min(), settings.radius().max(), Location2D.from(world, settings.origin().x(), settings.origin().z()))
-                .whenComplete((location, throwable) -> {
-                    cachedSaveLocations.compute(world.getName(), (k, v) -> {
-                        if (v == null) {
-                            v = new ArrayList<>();
-                        }
-                        if (location.isPresent()) {
-                            v.add(location.get());
-                        }
-                        return v;
-                    });
-                    cacheLocation(world, tryCount + 1);
+                    @Override
+                    public @NotNull ListenableFuture<Queue<Location>> reload(@NotNull String world, @NotNull Queue<Location> oldQueue) {
+                        return reloadExecutor.submit(() -> {
+                            var settings = plugin.configuration().worldSettings(world);
+                            var safeLoc = findSaveLocation(world, settings.radius().min(), settings.radius().max(), settings.origin().x(), settings.origin().z());
+                            safeLoc.ifPresent(oldQueue::add);
+                            return oldQueue;
+                        });
+                    }
                 });
     }
 
     public void warmupCache() {
-        plugin.configuration().worlds().forEach((name, rtpSettings) -> {
-            cachedSaveLocations.putIfAbsent(name, new LinkedList<>());
-            recache();
+        plugin.configuration().worlds().forEach((world, settings) -> {
+            try {
+                cache.get(world);
+            } catch (ExecutionException e) {
+                throw new RuntimeException(e);
+            }
         });
     }
 
-    public void recache() {
-        cachedSaveLocations.forEach((name, locations) -> {
-            plugin.getLogger().info("Recache for world " + name + " with " + plugin.configuration().keepInCache() + " locations");
-            var world = plugin.getServer().getWorld(name);
-            if (world == null) {
-                return;
-            }
-            cacheLocation(world, 0);
-        });
-    }
+    public Optional<Location> getCachedSafeLocation(World world) {
+        plugin.getLogger().info("Getting cached safe location for " + world.getName());
+        var worldName = world.getName();
+        try {
+            Queue<Location> queue = cache.get(worldName);
 
-    public CompletableFuture<Optional<Location>> findSaveLocation(World world, int minRadius, int maxRadius, Location2D origin) {
-        return CompletableFuture.supplyAsync(() -> {
+            Location loc;
+            int tries = 0;
+            final int MAX_TRIES = plugin.configuration().maxTries();
 
-            for (int i = 0; i < plugin.configuration().maxTries(); i++) {
-                double angle = random.nextDouble() * 2 * Math.PI;
-                double distance = minRadius + (random.nextDouble() * (maxRadius - minRadius));
-                double x = origin.getX() + distance * Math.cos(angle);
-                double z = origin.getZ() + distance * Math.sin(angle);
+            do {
+                loc = queue.poll();
+                cache.refresh(worldName);
 
-                int y;
-                if (world.getEnvironment() == World.Environment.NETHER) {
-                    var yOpt = getHighestLocationInNether(world, x, z);
-                    if (yOpt.isEmpty()) {
-                        continue;
-                    }
-                    y = yOpt.get();
-                } else {
-                    y = world.getHighestBlockYAt((int) x, (int) z);
+                if (loc == null) {
+                    continue;
                 }
 
-                //plugin.getLogger().info("Trying to find a safe location for " + world.getName() + " at " + x + ", " + y + ", " + z + " try: " + (i + 1));
-
-                var location = new Location(world, x, y, z).toCenterLocation();
-                location.setY(location.getY() - 0.5);
-
-                if (isSafeLocation(location)) {
-                    return Optional.of(location);
+                if (isSafeLocation(loc)) {
+                    return Optional.of(loc);
                 }
-            }
 
+                tries++;
+            } while (tries < MAX_TRIES);
+
+            var settings = plugin.configuration().worldSettings(worldName);
+            plugin.getLogger().info("No safe location found for " + worldName + " after " + MAX_TRIES + " tries. Trying to find a new one.");
+            return findSaveLocation(
+                    worldName,
+                    settings.radius().min(),
+                    settings.radius().max(),
+                    settings.origin().x(),
+                    settings.origin().z()
+            );
+        } catch (ExecutionException exception) {
+            plugin.getLogger().log(Level.WARNING, "Error while trying to get cached safe location for " + world.getName(), exception);
             return Optional.empty();
-        });
+        }
+    }
+
+    public Optional<Location> findSaveLocation(String worldName, int minRadius, int maxRadius, int originX, int originZ) {
+        for (int i = 0; i < plugin.configuration().maxTries(); i++) {
+            double angle = random.nextDouble() * 2 * Math.PI;
+            double distance = minRadius + (random.nextDouble() * (maxRadius - minRadius));
+            double x = originX + distance * Math.cos(angle);
+            double z = originZ + distance * Math.sin(angle);
+            int y;
+            var world = plugin.getServer().getWorld(worldName);
+            if (world == null) {
+                return Optional.empty();
+            }
+            if (world.getEnvironment() == World.Environment.NETHER) {
+                var yOpt = getHighestLocationInNether(world, x, z);
+                if (yOpt.isEmpty()) {
+                    continue;
+                }
+                y = yOpt.get();
+            } else {
+                y = world.getHighestBlockYAt((int) x, (int) z);
+            }
+
+            plugin.getLogger().info("Trying to find a safe location for " + world.getName() + " at " + x + ", " + y + ", " + z + " try: " + (i + 1));
+
+            var location = new Location(world, x, y, z).toCenterLocation();
+            location.setY(location.getY() - 0.5);
+
+            if (isSafeLocation(location)) {
+                return Optional.of(location);
+            }
+        }
+        return Optional.empty();
     }
 
 
