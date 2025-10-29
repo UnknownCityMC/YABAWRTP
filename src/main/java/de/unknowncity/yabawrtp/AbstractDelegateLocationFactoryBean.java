@@ -1,6 +1,5 @@
 package de.unknowncity.yabawrtp;
 
-import jogamp.common.util.locks.SingletonInstanceFileLock;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -121,25 +120,20 @@ public class AbstractDelegateLocationFactoryBean {
         Block blockBelow = block.getRelative(0, -1, 0);
         Block blockAbove = block.getRelative(0, 1, 0);
 
-        if (!blockBelow.getType().isSolid()) return false;
         if (!isSaveOnBlock(blockBelow)) return false;
 
         return isSaveInsideBlock(block) && isSaveInsideBlock(blockAbove);
     }
 
     private boolean isSaveInsideBlock(Block block) {
-        if (block.isSolid()) return false;
-        if (block.isLiquid()) return false;
-        if (block.isSuffocating()) return false;
-        if (block.getType() == Material.POWDER_SNOW) return false;
-        if (block.getType() == Material.FIRE) return false;
-        return true;
+        if (block.isPassable()) return true;
+        return block.isEmpty();
     }
 
     private boolean isSaveOnBlock(Block block) {
         if (block.getType() == Material.MAGMA_BLOCK) return false;
         if (block.getType() == Material.POWDER_SNOW) return false;
-        return true;
+        return block.isSolid();
     }
 
     private Optional<Integer> getHighestLocationInNether(World world, double x, double z) {
