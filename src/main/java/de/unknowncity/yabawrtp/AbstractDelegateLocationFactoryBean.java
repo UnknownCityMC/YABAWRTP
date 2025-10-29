@@ -1,5 +1,6 @@
 package de.unknowncity.yabawrtp;
 
+import jogamp.common.util.locks.SingletonInstanceFileLock;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
@@ -8,12 +9,13 @@ import org.incendo.cloud.bukkit.parser.location.Location2D;
 
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 
 public class AbstractDelegateLocationFactoryBean {
     private final YABAWRTPPlugin plugin;
     private final ThreadLocalRandom random = ThreadLocalRandom.current();
-    private final Map<String, List<Location>> cachedSaveLocations = new HashMap<>();
+    private final Map<String, List<Location>> cachedSaveLocations = new ConcurrentHashMap<>();
 
     public AbstractDelegateLocationFactoryBean(YABAWRTPPlugin yabawrtpPlugin) {
         this.plugin = yabawrtpPlugin;
@@ -23,13 +25,28 @@ public class AbstractDelegateLocationFactoryBean {
         if (!cachedSaveLocations.containsKey(world.getName()) || cachedSaveLocations.get(world.getName()).isEmpty()) {
             return Optional.empty();
         }
-        var location = cachedSaveLocations.get(world.getName()).getFirst();
-        cachedSaveLocations.get(world.getName()).removeFirst();
-        recache();
-        return Optional.of(location);
+        for (int i = 0; i < cachedSaveLocations.get(world.getName()).size(); i++) {
+            var location = cachedSaveLocations.get(world.getName()).getFirst();
+            if (!isSafeLocation(location)) {
+                continue;
+            }
+
+            cachedSaveLocations.get(world.getName()).remove(i);
+            recache();
+            return Optional.of(location);
+        }
+        return Optional.empty();
     }
 
-    private void cacheLocation(World world) {
+    private void cacheLocation(World world, int tryCount) {
+        if (tryCount >= plugin.configuration().maxTries()) {
+            return;
+        }
+        var locations = cachedSaveLocations.getOrDefault(world.getName(), new LinkedList<>());
+        if (locations.size() >= plugin.configuration().keepInCache()) {
+            plugin.getLogger().info("Cache for world " + world.getName() + " is full");
+            return;
+        }
         var settings = plugin.configuration().worldSettings(world.getName());
         findSaveLocation(world, settings.radius().min(), settings.radius().max(), Location2D.from(world, settings.origin().x(), settings.origin().z()))
                 .whenComplete((location, throwable) -> {
@@ -42,27 +59,25 @@ public class AbstractDelegateLocationFactoryBean {
                         }
                         return v;
                     });
+                    cacheLocation(world, tryCount + 1);
                 });
     }
 
     public void warmupCache() {
         plugin.configuration().worlds().forEach((name, rtpSettings) -> {
-            cachedSaveLocations.putIfAbsent(name, new ArrayList<>());
+            cachedSaveLocations.putIfAbsent(name, new LinkedList<>());
             recache();
         });
     }
 
     public void recache() {
         cachedSaveLocations.forEach((name, locations) -> {
-           for (int i = 0; i < plugin.configuration().maxTries(); i++) {
-               if (locations.size() >= plugin.configuration().keepInCache()) {
-                   plugin.getLogger().info("Cache for world " + name + " is full");
-                   break;
-               }
-               var world = plugin.getServer().getWorld(name);
-               if (world == null) return;
-               cacheLocation(world);
-           }
+            plugin.getLogger().info("Recache for world " + name + " with " + plugin.configuration().keepInCache() + " locations");
+            var world = plugin.getServer().getWorld(name);
+            if (world == null) {
+                return;
+            }
+            cacheLocation(world, 0);
         });
     }
 
@@ -70,12 +85,10 @@ public class AbstractDelegateLocationFactoryBean {
         return CompletableFuture.supplyAsync(() -> {
 
             for (int i = 0; i < plugin.configuration().maxTries(); i++) {
-
                 double angle = random.nextDouble() * 2 * Math.PI;
                 double distance = minRadius + (random.nextDouble() * (maxRadius - minRadius));
                 double x = origin.getX() + distance * Math.cos(angle);
                 double z = origin.getZ() + distance * Math.sin(angle);
-
 
                 int y;
                 if (world.getEnvironment() == World.Environment.NETHER) {
@@ -87,6 +100,8 @@ public class AbstractDelegateLocationFactoryBean {
                 } else {
                     y = world.getHighestBlockYAt((int) x, (int) z);
                 }
+
+                //plugin.getLogger().info("Trying to find a safe location for " + world.getName() + " at " + x + ", " + y + ", " + z + " try: " + (i + 1));
 
                 var location = new Location(world, x, y, z).toCenterLocation();
                 location.setY(location.getY() - 0.5);
